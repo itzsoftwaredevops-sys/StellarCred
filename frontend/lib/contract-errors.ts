@@ -4,43 +4,16 @@
 // StellarCred ProofRegistry contract.
 //
 // This is the single source of truth for contract error codes — shared with
-// both the client-side interaction layer (contracts.ts) and any SDK-typed
-// error helpers. Keep error messages here and import from this module
-// everywhere else.
+// both the client-side interaction layer (contracts.ts) and the SDK's typed
+// error helpers (packages/sdk/src/errors.ts). Keep error messages here and
+// import from this module everywhere else.
 
-// ── Error table ───────────────────────────────────────────────────────────────
+// Re-export from SDK to ensure single source of truth (#404)
+export { PROOF_REGISTRY_ERROR_MESSAGES as PROOF_REGISTRY_ERRORS } from "@stellarcred/sdk/src/errors";
 
-/**
- * Maps ProofRegistry on-chain error codes to human-readable messages.
- * Must stay in sync with the Rust contract's `Error` enum:
- *
- *   NotInitialized          = 1
- *   VerificationFailed      = 2
- *   NotAuthorized           = 3
- *   IssuerNotTrusted        = 4
- *   IssuerKeyMismatch       = 5
- *   ProofNotFound           = 6
- *   BatchTooLarge           = 7
- *   BatchEmpty              = 8
- *   DuplicateCredentialType = 9
- *   AggregateLayoutInvalid  = 10
- *   SubmissionsPaused       = 11
- *   InvalidExpiry           = 12
- */
-export const PROOF_REGISTRY_ERRORS: Record<number, string> = {
-  1: "Contracts not initialised — check that all contract IDs are set in the environment.",
-  2: "Proof verification failed — the ZK proof is invalid or was generated against the wrong circuit VK.",
-  3: "Not authorised — wallet signature missing or wrong account.",
-  4: "Issuer not trusted — the issuer address isn't registered for this credential type.",
-  5: "Issuer key mismatch — this credential was signed with a key that doesn't match what's registered on-chain. Re-issue the credential and try again.",
-  6: "Proof not found — no on-chain proof exists for this holder and credential type.",
-  7: "Batch too large — reduce the number of proofs and try again.",
-  8: "Batch is empty — include at least one proof submission.",
-  9: "Duplicate credential type — the batch contains two proofs for the same claim type. Remove the duplicate and try again.",
-  10: "Aggregate proof layout invalid — the number of credentials or public inputs don't match the expected format. Re-generate the aggregate proof.",
-  11: "Submissions paused — the protocol admin has temporarily halted new proof submissions. Try again later.",
-  12: "Invalid expiry — the credential expiry is either in the past or too far in the future. Re-issue with a valid validity window.",
-};
+// Legacy alias for backward compatibility
+import { PROOF_REGISTRY_ERROR_MESSAGES } from "@stellarcred/sdk/src/errors";
+export const _PROOF_REGISTRY_ERRORS_LEGACY = PROOF_REGISTRY_ERROR_MESSAGES;
 
 // ── ContractError ─────────────────────────────────────────────────────────────
 
@@ -53,6 +26,11 @@ export interface ContractError {
 
 /**
  * Normalises a raw contract error string into a {@link ContractError}.
+ * 
+ * This is a frontend-specific wrapper that maintains backward compatibility
+ * with existing UI code. For new code, prefer importing ContractError from
+ * the SDK (@stellarcred/sdk) which provides typed error codes and helper
+ * methods like isRetryable() and isTerminal().
  *
  * Handles:
  * - Numeric contract errors:  `Error(Contract, #N)` → looks up {@link PROOF_REGISTRY_ERRORS}
