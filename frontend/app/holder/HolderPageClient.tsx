@@ -55,6 +55,7 @@ import dynamic from "next/dynamic";
 import CredentialDetailModal from "@/components/CredentialDetailModal";
 import { useToast } from "@/components/Toast";
 import { IMPORT_PARAM } from "@/lib/transfer";
+import { DataWipePanel } from "@/components/DataWipePanel";
 
 // The encrypted-transfer modals are heavy (credential-crypto.ts PBKDF2/AES-GCM, QR
 // rendering) and only needed when the user actually starts a transfer — load
@@ -1026,6 +1027,13 @@ function HolderInner() {
               </p>
             </div>
           ))}
+
+          {/* ── Data Management (Data Wipe) ── */}
+          {!loading && !importing && (
+            <div style={{ marginTop: "2.5rem", paddingTop: "2rem", borderTop: "1px solid var(--border)" }}>
+              <DataWipePanel />
+            </div>
+          )}
         </div>
       )}
 
