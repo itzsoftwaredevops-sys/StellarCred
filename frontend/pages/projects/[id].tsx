@@ -15,6 +15,7 @@ import MonthlyGivingSetup from "@/components/MonthlyGivingSetup";
 import DescriptionAccordion from "@/components/DescriptionAccordion";
 import WalletAddressQRCode from "@/components/WalletAddressQRCode";
 import ProjectProgressBar from "@/components/ProjectProgressBar";
+import RewardTierCard from "@/components/RewardTierCard";
 import {
   fetchProject,
   fetchProjectUpdates,
@@ -26,9 +27,10 @@ import {
   toggleUpdateLike,
   followProject,
   unfollowProject,
+  fetchCampaignTiers,
 } from "@/lib/api";
 import { useI18n } from "@/lib/i18n";
-import { formatXLM, formatCO2, progressPercent, timeAgo, statusClass, statusLabel, CATEGORY_ICONS, copyToClipboard, shortenAddress } from "@/utils/format";
+import { formatXLM, formatCO2, progressPercent, timeAgo, statusClass, statusLabel, CATEGORY_ICONS, copyToClipboard, shortenAddress, formatCountdown } from "@/utils/format";
 import { accountUrl, fetchProjectDiscussion, type ProjectDiscussionMessage } from "@/lib/stellar";
 import { markMonthlySubscriptionPaid } from "@/lib/monthlyGiving";
 import type {
@@ -36,6 +38,7 @@ import type {
   Donation,
   ProjectCampaign,
   ProjectUpdate,
+  CampaignRewardTier,
 } from "@/utils/types";
 import { useWishlist } from "@/hooks/useWishlist";
 
@@ -98,6 +101,7 @@ export default function ProjectDetail({
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const [aiSummaryState, setAiSummaryState] = useState<"idle" | "loading" | "error">("idle");
   const [aiSummaryError, setAiSummaryError] = useState<string | null>(null);
+  const [campaignTiers, setCampaignTiers] = useState<CampaignRewardTier[]>([]);
   const [isFollowing, setIsFollowing] = useState(false);
   const [followCount, setFollowCount] = useState(0);
   const [followLoading, setFollowLoading] = useState(false);
@@ -211,6 +215,17 @@ export default function ProjectDetail({
     const timer = window.setInterval(() => setCountdownNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, []);
+
+  // Fetch campaign tiers when there's an active campaign
+  useEffect(() => {
+    if (!project?.activeCampaign?.id) {
+      setCampaignTiers([]);
+      return;
+    }
+    fetchCampaignTiers(project.activeCampaign.id)
+      .then(setCampaignTiers)
+      .catch(() => setCampaignTiers([]));
+  }, [project?.activeCampaign?.id]);
 
   const handleCopyWallet = async () => {
     if (!project) return;
@@ -896,6 +911,38 @@ export default function ProjectDetail({
                 }}
               />
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Reward Tiers for Active Campaign */}
+      {activeCampaign && campaignTiers.length > 0 && (
+        <div className="card mb-6">
+          <h2 className="font-display text-xl font-semibold text-forest-900 mb-4">
+            Reward Tiers
+          </h2>
+          <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+            Choose a tier to support this campaign with special early-bird pricing.
+          </p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {campaignTiers.map((tier) => (
+              <RewardTierCard
+                key={tier.id}
+                tier={tier}
+                onSelect={(selectedTier) => {
+                  // Pre-fill the donation amount with the tier amount
+                  const donateForm = document.querySelector<HTMLInputElement>(
+                    'input[placeholder="Amount (XLM)"]'
+                  );
+                  if (donateForm) {
+                    donateForm.value = selectedTier.amountXLM;
+                    donateForm.dispatchEvent(new Event("input", { bubbles: true }));
+                    // Scroll to the donation form
+                    donateForm.scrollIntoView({ behavior: "smooth", block: "center" });
+                  }
+                }}
+              />
+            ))}
           </div>
         </div>
       )}
@@ -1830,18 +1877,4 @@ function renderMarkdown(text: string): string {
       '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-forest-600 hover:underline">$1</a>',
     )
     .replace(/\n/g, "<br />");
-}
-
-function formatCountdown(deadline: string, nowMs: number) {
-  const deltaMs = new Date(deadline).getTime() - nowMs;
-  if (deltaMs <= 0) return "0h 0m 0s";
-
-  const totalSeconds = Math.floor(deltaMs / 1000);
-  const days = Math.floor(totalSeconds / 86400);
-  const hours = Math.floor((totalSeconds % 86400) / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-
-  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
-  return `${hours}h ${minutes}m ${seconds}s`;
 }

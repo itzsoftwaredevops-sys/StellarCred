@@ -572,7 +572,7 @@ router.get("/:id/on-chain-donations", async (req, res, next) => {
  */
 router.post("/:id/campaigns", async (req, res, next) => {
   try {
-    const { title, goalXLM, deadline, description } = req.body || {};
+    const { title, goalXLM, deadline, description, tiers } = req.body || {};
     const trimmedTitle = typeof title === "string" ? title.trim() : "";
     const trimmedDescription =
       typeof description === "string" ? description.trim() : "";
@@ -611,12 +611,13 @@ router.post("/:id/campaigns", async (req, res, next) => {
       return res.status(404).json({ error: "Project not found" });
     }
 
+    const campaignId = uuid();
     const result = await pool.query(
       `INSERT INTO project_campaigns (id, project_id, title, description, goal_xlm, deadline, created_at)
        VALUES ($1, $2, $3, $4, $5, $6, NOW())
        RETURNING *, 0::numeric AS raised_xlm`,
       [
-        uuid(),
+        campaignId,
         req.params.id,
         trimmedTitle,
         trimmedDescription || null,
@@ -624,6 +625,57 @@ router.post("/:id/campaigns", async (req, res, next) => {
         deadlineDate.toISOString(),
       ],
     );
+
+    // If tiers array is provided, insert them
+    if (Array.isArray(tiers) && tiers.length > 0) {
+      for (let i = 0; i < tiers.length; i++) {
+        const tier = tiers[i];
+        const tierTitle = typeof tier.title === "string" ? tier.title.trim() : "";
+        const tierDescription =
+          typeof tier.description === "string" ? tier.description.trim() : null;
+        const tierAmount = Number.parseFloat(tier.amountXLM);
+        const tierOriginalAmount = tier.originalAmountXLM
+          ? Number.parseFloat(tier.originalAmountXLM)
+          : null;
+        const tierCap =
+          tier.inventoryCap !== null && tier.inventoryCap !== undefined
+            ? Number.parseInt(tier.inventoryCap, 10)
+            : null;
+        const tierDeadline = tier.earlyBirdDeadline
+          ? new Date(tier.earlyBirdDeadline)
+          : null;
+
+        if (tierTitle.length < 3 || tierTitle.length > 120) {
+          return res.status(400).json({
+            error: `tier[${i}].title must be between 3 and 120 characters`,
+          });
+        }
+        if (!Number.isFinite(tierAmount) || tierAmount <= 0) {
+          return res.status(400).json({
+            error: `tier[${i}].amountXLM must be a positive number`,
+          });
+        }
+
+        await pool.query(
+          `INSERT INTO campaign_reward_tiers
+             (id, campaign_id, title, description, amount_xlm, original_amount_xlm,
+              inventory_cap, early_bird_deadline, badge_label, display_order)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            uuid(),
+            campaignId,
+            tierTitle,
+            tierDescription,
+            tierAmount.toFixed(7),
+            tierOriginalAmount ? tierOriginalAmount.toFixed(7) : null,
+            tierCap,
+            tierDeadline ? tierDeadline.toISOString() : null,
+            tier.badgeLabel || "Standard",
+            tier.displayOrder !== undefined ? tier.displayOrder : i,
+          ],
+        );
+      }
+    }
 
     logAdminAction({
       actor: req.body?.adminAddress || "unknown",
@@ -635,6 +687,7 @@ router.post("/:id/campaigns", async (req, res, next) => {
         title: trimmedTitle,
         goalXLM: goal,
         deadline,
+        tierCount: tiers?.length || 0,
       },
       ipAddress: req.ip,
     });
@@ -677,6 +730,178 @@ router.get("/:id/campaigns", async (req, res, next) => {
     next(e);
   }
 });
+
+/**
+ * Create reward tiers for a campaign.
+ *
+ * @route POST /api/campaigns/:campaignId/tiers
+ * @param {import('express').Request} req - Express request with tier details.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express error middleware.
+ * @returns {Promise<void>} Sends the created tier payload.
+ * @throws {Error} If validation or insertion fails.
+ */
+router.post("/campaigns/:campaignId/tiers", async (req, res, next) => {
+  try {
+    const {
+      title,
+      description,
+      amountXLM,
+      originalAmountXLM,
+      inventoryCap,
+      earlyBirdDeadline,
+      badgeLabel = "Standard",
+      displayOrder = 0,
+    } = req.body || {};
+
+    const trimmedTitle = typeof title === "string" ? title.trim() : "";
+    const trimmedDescription =
+      typeof description === "string" ? description.trim() : null;
+    const amount = Number.parseFloat(amountXLM);
+    const originalAmount = originalAmountXLM
+      ? Number.parseFloat(originalAmountXLM)
+      : null;
+    const cap =
+      inventoryCap !== null && inventoryCap !== undefined
+        ? Number.parseInt(inventoryCap, 10)
+        : null;
+    const deadline = earlyBirdDeadline ? new Date(earlyBirdDeadline) : null;
+
+    if (trimmedTitle.length < 3 || trimmedTitle.length > 120) {
+      return res
+        .status(400)
+        .json({ error: "title must be between 3 and 120 characters" });
+    }
+    if (!Number.isFinite(amount) || amount <= 0) {
+      return res
+        .status(400)
+        .json({ error: "amountXLM must be a positive number" });
+    }
+    if (
+      originalAmount !== null &&
+      (!Number.isFinite(originalAmount) || originalAmount <= amount)
+    ) {
+      return res
+        .status(400)
+        .json({
+          error: "originalAmountXLM must be greater than amountXLM when specified",
+        });
+    }
+    if (cap !== null && (!Number.isFinite(cap) || cap <= 0)) {
+      return res
+        .status(400)
+        .json({ error: "inventoryCap must be a positive integer or null" });
+    }
+    if (
+      deadline !== null &&
+      (Number.isNaN(deadline.getTime()) || deadline.getTime() <= Date.now())
+    ) {
+      return res
+        .status(400)
+        .json({ error: "earlyBirdDeadline must be a valid future date or null" });
+    }
+
+    const campaignResult = await pool.query(
+      "SELECT id FROM project_campaigns WHERE id = $1",
+      [req.params.campaignId],
+    );
+    if (!campaignResult.rows[0]) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO campaign_reward_tiers
+         (id, campaign_id, title, description, amount_xlm, original_amount_xlm,
+          inventory_cap, early_bird_deadline, badge_label, display_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING *`,
+      [
+        uuid(),
+        req.params.campaignId,
+        trimmedTitle,
+        trimmedDescription,
+        amount.toFixed(7),
+        originalAmount ? originalAmount.toFixed(7) : null,
+        cap,
+        deadline ? deadline.toISOString() : null,
+        badgeLabel,
+        displayOrder,
+      ],
+    );
+
+    res.status(201).json({ success: true, data: mapTierRow(result.rows[0]) });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * List reward tiers for a campaign with availability status.
+ *
+ * @route GET /api/campaigns/:campaignId/tiers
+ * @param {import('express').Request} req - Express request containing the campaign id.
+ * @param {import('express').Response} res - Express response object.
+ * @param {import('express').NextFunction} next - Express error middleware.
+ * @returns {Promise<void>} Sends the tier list with availability indicators.
+ * @throws {Error} If the tier query fails.
+ */
+router.get("/campaigns/:campaignId/tiers", async (req, res, next) => {
+  try {
+    const campaignResult = await pool.query(
+      "SELECT id FROM project_campaigns WHERE id = $1",
+      [req.params.campaignId],
+    );
+    if (!campaignResult.rows[0]) {
+      return res.status(404).json({ error: "Campaign not found" });
+    }
+
+    const result = await pool.query(
+      `SELECT *,
+              (inventory_cap IS NULL OR inventory_claimed < inventory_cap) AND
+              (early_bird_deadline IS NULL OR early_bird_deadline > NOW()) AS is_available,
+              CASE
+                WHEN inventory_cap IS NULL THEN NULL
+                ELSE inventory_cap - inventory_claimed
+              END AS slots_remaining,
+              (early_bird_deadline IS NOT NULL AND early_bird_deadline <= NOW()) AS is_expired
+       FROM campaign_reward_tiers
+       WHERE campaign_id = $1
+       ORDER BY display_order ASC, created_at ASC`,
+      [req.params.campaignId],
+    );
+
+    res.json({
+      success: true,
+      data: result.rows.map((row) => ({
+        ...mapTierRow(row),
+        isAvailable: Boolean(row.is_available),
+        slotsRemaining: row.slots_remaining,
+        isExpired: Boolean(row.is_expired),
+      })),
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+function mapTierRow(row) {
+  return {
+    id: row.id,
+    campaignId: row.campaign_id,
+    title: row.title,
+    description: row.description || null,
+    amountXLM: row.amount_xlm?.toString() || "0",
+    originalAmountXLM: row.original_amount_xlm?.toString() || null,
+    inventoryCap: row.inventory_cap,
+    inventoryClaimed: row.inventory_claimed || 0,
+    earlyBirdDeadline: row.early_bird_deadline
+      ? new Date(row.early_bird_deadline).toISOString()
+      : null,
+    badgeLabel: row.badge_label || "Standard",
+    displayOrder: row.display_order || 0,
+    createdAt: new Date(row.created_at).toISOString(),
+  };
+}
 
 /**
  * List milestones for a project.

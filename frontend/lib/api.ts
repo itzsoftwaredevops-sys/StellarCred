@@ -209,12 +209,94 @@ export async function createProjectCampaign(
     goalXLM: string;
     deadline: string;
     description?: string;
+    tiers?: Array<{
+      title: string;
+      description?: string;
+      amountXLM: string;
+      originalAmountXLM?: string;
+      inventoryCap?: number;
+      earlyBirdDeadline?: string;
+      badgeLabel?: string;
+      displayOrder?: number;
+    }>;
   },
 ) {
   const { data } = await api.post<{ success: boolean; data: ProjectCampaign }>(
     `/api/projects/${projectId}/campaigns`,
     payload,
   );
+  return data.data;
+}
+
+/**
+ * Fetch reward tiers for a campaign.
+ *
+ * @param campaignId - Campaign id.
+ * @returns List of tiers with availability status.
+ * @throws If the request fails.
+ */
+export async function fetchCampaignTiers(campaignId: string) {
+  const { data } = await api.get<{
+    success: boolean;
+    data: Array<{
+      id: string;
+      campaignId: string;
+      title: string;
+      description?: string;
+      amountXLM: string;
+      originalAmountXLM?: string;
+      inventoryCap?: number;
+      inventoryClaimed: number;
+      earlyBirdDeadline?: string;
+      badgeLabel: string;
+      displayOrder: number;
+      createdAt: string;
+      isAvailable: boolean;
+      slotsRemaining?: number;
+      isExpired: boolean;
+    }>;
+  }>(`/api/campaigns/${campaignId}/tiers`);
+  return data.data;
+}
+
+/**
+ * Create a reward tier for a campaign.
+ *
+ * @param campaignId - Campaign id.
+ * @param payload - Tier details.
+ * @returns The created tier.
+ * @throws If the request fails or validation is rejected by the backend.
+ */
+export async function createCampaignTier(
+  campaignId: string,
+  payload: {
+    title: string;
+    description?: string;
+    amountXLM: string;
+    originalAmountXLM?: string;
+    inventoryCap?: number;
+    earlyBirdDeadline?: string;
+    badgeLabel?: string;
+    displayOrder?: number;
+  },
+) {
+  const { data } = await api.post<{
+    success: boolean;
+    data: {
+      id: string;
+      campaignId: string;
+      title: string;
+      description?: string;
+      amountXLM: string;
+      originalAmountXLM?: string;
+      inventoryCap?: number;
+      inventoryClaimed: number;
+      earlyBirdDeadline?: string;
+      badgeLabel: string;
+      displayOrder: number;
+      createdAt: string;
+    };
+  }>(`/api/campaigns/${campaignId}/tiers`, payload);
   return data.data;
 }
 

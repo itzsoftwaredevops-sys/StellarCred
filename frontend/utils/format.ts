@@ -288,3 +288,30 @@ export function calculateStreak(donations: { createdAt: string }[]): { current: 
 
   return { current: currentStreak, longest };
 }
+
+/**
+ * Format a countdown timer for a deadline timestamp.
+ *
+ * @param deadline - ISO timestamp of the deadline.
+ * @param now - Current timestamp (milliseconds since epoch).
+ * @returns A formatted string like "2d 5h 30m" or "Expired".
+ * @throws {Error} Never throws.
+ *
+ * @example
+ * formatCountdown("2025-01-25T12:00:00Z", Date.now()) // "2d 5h 30m"
+ */
+export function formatCountdown(deadline: string, now: number): string {
+  const deadlineMs = new Date(deadline).getTime();
+  const diff = deadlineMs - now;
+  
+  if (diff <= 0) return "Expired";
+  
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+  const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+  const seconds = Math.floor((diff % (1000 * 60)) / 1000);
+  
+  if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+  if (hours > 0) return `${hours}h ${minutes}m ${seconds}s`;
+  return `${minutes}m ${seconds}s`;
+}

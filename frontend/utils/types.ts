@@ -99,6 +99,29 @@ export interface ProjectCampaign {
   completed: boolean;
   active: boolean;
   createdAt: string;
+  tiers?: CampaignRewardTier[];
+}
+
+/**
+ * A reward tier within a campaign, with optional early-bird pricing and inventory limits.
+ */
+export interface CampaignRewardTier {
+  id: string;
+  campaignId: string;
+  title: string;
+  description?: string;
+  amountXLM: string;
+  originalAmountXLM?: string;  // present if discounted
+  inventoryCap?: number;  // null/undefined = unlimited
+  inventoryClaimed: number;
+  earlyBirdDeadline?: string;  // ISO timestamp
+  badgeLabel: string;
+  displayOrder: number;
+  createdAt: string;
+  // Backend-computed fields:
+  isAvailable: boolean;
+  slotsRemaining?: number;
+  isExpired: boolean;
 }
 
 /**
